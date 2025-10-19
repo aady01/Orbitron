@@ -8,7 +8,7 @@ export const Client = () => {
     const { data: users } = useSuspenseQuery(trpc.getUsers.queryOptions());
 
     return (
-        <div>
+        <div className="flex items-center justify-center ">
             client component: {JSON.stringify(users)}
         </div>
     )

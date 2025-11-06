@@ -7,6 +7,7 @@ import { toast } from "sonner";
 export default function Page() {
   const trpc = useTRPC();
   const { data, error, isLoading } = useQuery(trpc.getWorkflow.queryOptions());
+  const testAi = useMutation(trpc.testai.mutationOptions())
   const create = useMutation(trpc.createWorkflow.mutationOptions({
     onSuccess: () => {
       toast.success("Job Queued")
@@ -32,9 +33,6 @@ export default function Page() {
     )
   }
 
-
-
-
   return (
     <div className="min-h-screen min-w-screen flex items-center justify-center flex-col gap-y-6">
       <div>
@@ -42,6 +40,9 @@ export default function Page() {
       </div>
       <Button disabled={create.isPending} onClick={() => { create.mutate() }}>
         create workflow
+      </Button>
+      <Button disabled={testAi.isPending} onClick={() => testAi.mutate()}>
+        Test Ai
       </Button>
     </div>
   )

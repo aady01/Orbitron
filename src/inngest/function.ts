@@ -14,10 +14,18 @@ export const execute = inngest.createFunction(
   async ({ event, step }) => {
     await step.sleep("pretend", "5s");
 
+    console.warn("Somthing is missing here testSentryLog");
+    console.error("SenttryTestError");
+
     const { steps } = await step.ai.wrap("gemini-generate-text", generateText, {
       model: google("gemini-2.5-flash"),
       system: "You are a helpful assistance",
       prompt: "what is 2 + 2?",
+      experimental_telemetry: {
+        isEnabled: true,
+        recordInputs: true,
+        recordOutputs: true,
+      },
     });
     return steps;
   }

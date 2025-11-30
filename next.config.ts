@@ -11,6 +11,17 @@ const nextConfig: NextConfig = {
       },
     ];
   },
+  webpack: (config, { isServer }) => {
+    // Suppress case-sensitivity warnings (common on Windows)
+    config.ignoreWarnings = [
+      {
+        module: /node_modules/,
+        message:
+          /There are multiple modules with names that only differ in casing/,
+      },
+    ];
+    return config;
+  },
 };
 
 export default withSentryConfig(nextConfig, {

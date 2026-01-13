@@ -6,7 +6,7 @@ interface UseEntitySearchProps<T extends {
     page: number
 }> {
     params: T;
-    setParams: (params: T) => void;
+    setParams: (params: Partial<T>) => void;
     debounceMs?: number;
 }
 
@@ -17,26 +17,16 @@ export function useEntitySearch<T extends {
     const [localSearch, setLocalSearch] = useState(params.search)
 
     useEffect(() => {
-        if (localSearch === "" && params.search === "") {
-            setParams({
-                ...params,
-                search: "",
-                page: PAGINATION.DEFAULT_PAGE,
-            });
-            return;
-        }
-
         const timer = setTimeout(() => {
             if (localSearch !== params.search) {
                 setParams({
-                    ...params,
                     search: localSearch,
                     page: PAGINATION.DEFAULT_PAGE,
                 })
             }
         }, debounceMs);
         return () => clearTimeout(timer)
-    }, [localSearch, params, setParams, debounceMs])
+    }, [localSearch, params.search, setParams, debounceMs])
 
     useEffect(() => { setLocalSearch(params.search) }, [params.search])
     return {

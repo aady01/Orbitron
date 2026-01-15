@@ -6,7 +6,6 @@ import {
     WorkflowsContainer,
     WorkflowsList,
     WorkflowsLoading,
-    WorkflowsError
 } from "@/features/workflows/components/workflows";
 import { prefetchWorkflows } from "@/features/workflows/server/prefetch";
 import type { SearchParams } from "nuqs";

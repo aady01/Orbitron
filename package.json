@@ -15,6 +15,7 @@
     "@ai-sdk/google": "^2.0.24",
     "@ai-sdk/openai": "^2.0.64",
     "@hookform/resolvers": "^5.2.2",
+    "@paralleldrive/cuid2": "^3.0.6",
     "@prisma/adapter-pg": "^7.2.0",
     "@prisma/client": "7.2.0",
     "@radix-ui/react-dialog": "^1.1.15",

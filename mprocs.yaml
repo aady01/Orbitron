@@ -1,0 +1,3 @@
+procs:
+  dev: pnpm run devt
+  inngest: pnpm run inngest

@@ -8,7 +8,7 @@ import { toast } from "sonner";
 import { useWorkflowsParams } from "./use-workflows-params";
 
 /**
- * this is the hool to fetch all workflows using suspense
+ * this is the hook to fetch all workflows using suspense
  */
 
 export const useSuspenseWorkflows = () => {
@@ -73,7 +73,7 @@ export const useSuspenseWorkflow = (id: string) => {
  * hook for Updating the workflow
  */
 
-export const useUpdateWorkflow = () => {
+export const useUpdateWorkflowName = () => {
   const queryClient = useQueryClient();
   const trpc = useTRPC();
 
@@ -88,6 +88,26 @@ export const useUpdateWorkflow = () => {
       },
       onError: (error) => {
         toast.error(`Failed to update ${error.message}`);
+      },
+    })
+  );
+};
+
+export const useUpdateWorkflow = () => {
+  const queryClient = useQueryClient();
+  const trpc = useTRPC();
+
+  return useMutation(
+    trpc.workflows.update.mutationOptions({
+      onSuccess: (data) => {
+        toast.success(`Workflow ${data.name} saved`);
+        queryClient.invalidateQueries(trpc.workflows.getMany.queryOptions({}));
+        queryClient.invalidateQueries(
+          trpc.workflows.getOne.queryOptions({ id: data.id })
+        );
+      },
+      onError: (error) => {
+        toast.error(`Failed to save workflow : ${error.message}`);
       },
     })
   );

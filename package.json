@@ -5,6 +5,7 @@
   "scripts": {
     "devt": "next dev",
     "dev": "next dev --turbopack",
+    "mprocs": "pnpm exec mprocs",
     "inngest": "pnpm dlx inngest-cli@latest dev",
     "build": "next build --turbopack",
     "start": "next start",
@@ -21,6 +22,7 @@
     "@radix-ui/react-dialog": "^1.1.15",
     "@radix-ui/react-dropdown-menu": "^2.1.16",
     "@radix-ui/react-label": "^2.1.7",
+    "@radix-ui/react-select": "^2.2.6",
     "@radix-ui/react-separator": "^1.1.7",
     "@radix-ui/react-slot": "^1.2.3",
     "@radix-ui/react-tooltip": "^1.2.8",
@@ -37,6 +39,7 @@
     "clsx": "^2.1.1",
     "date-fns": "^4.1.0",
     "inngest": "^3.44.3",
+    "jotai": "^2.16.2",
     "lucide-react": "^0.552.0",
     "next": "15.5.6",
     "next-themes": "^0.4.6",

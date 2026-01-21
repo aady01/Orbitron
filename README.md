@@ -1,36 +1,97 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Orbitron
 
-## Getting Started
+Orbitron is a powerful, extensible workflow automation platform built with modern web technologies. It allows users to visually design workflows using a node-based editor and execute them reliably in the background.
 
-First, run the development server:
+## 🚀 Technical Overview
+
+This project is built as a monorepo-style Next.js application, leveraging a robust stack for high performance and type safety.
+
+### Technology Stack
+
+- **Framework**: [Next.js 15](https://nextjs.org/) (App Router, Turbopack)
+- **Language**: [TypeScript](https://www.typescriptlang.org/)
+- **Styling**: [Tailwind CSS 4](https://tailwindcss.com/)
+- **Database ORM**: [Prisma](https://www.prisma.io/) (PostgreSQL)
+- **API Layer**: [tRPC](https://trpc.io/) (Type-safe APIs)
+- **Workflow Engine**: [Inngest](https://www.inngest.com/) (Durable execution)
+- **Visual Editor**: [React Flow](https://reactflow.dev/) (Interactive node-based UI)
+- **Authentication**: [Better Auth](https://www.better-auth.com/)
+- **State Management**: [Jotai](https://jotai.org/) & [React Query](https://tanstack.com/query/latest)
+
+## 🏗️ Architecture
+
+The application is structured into domain-specific features to maintain modularity.
+
+### Directory Structure
+
+- `src/app`: Next.js App Router pages and layouts.
+- `src/components`: Shared UI components (Radix UI, Shadcn/ui).
+- `src/features`: core business logic, split by domain:
+  - `auth`: Authentication logic.
+  - `editor`: The visual workflow builder.
+  - `executions`: Logic for running instances of workflows.
+  - `triggers`: Event listeners that start workflows.
+  - `workflows`: CRUD operations and definitions for workflow entities.
+- `src/server`: Backend logic including tRPC routers.
+- `prisma`: Database schema and migrations.
+
+### Data Model
+
+The core data entities are defined in `prisma/schema.prisma`:
+
+- **Workflow**: The parent entity containing the graph structure.
+- **Node**: Individual steps in a workflow (e.g., `MANUAL_TRIGGER`, `HTTP_REQUEST`).
+- **Connection**: Directed edges linking nodes to define execution flow.
+- **Execution** (implied): Instances of running workflows managed via Inngest.
+
+## 🛠️ Getting Started
+
+### Prerequisites
+
+- Node.js (v20+)
+- pnpm (Preferred package manager)
+- PostgreSQL database
+
+### Installation
+
+1. **Clone the repository:**
+   ```bash
+   git clone <repo-url>
+   cd Orbitron
+   ```
+
+2. **Install dependencies:**
+   ```bash
+   pnpm install
+   ```
+
+3. **Environment Setup:**
+   Copy `.env.example` to `.env` and fill in necessary secrets (Database URL, Auth secrets).
+
+4. **Database Setup:**
+   ```bash
+   pnpm prisma db push
+   ```
+
+### Development
+
+Run the development server with Turbopack:
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
 pnpm dev
-# or
-bun dev
+# or for concurrent dev + inngest
+pnpm run devt
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Start the Inngest local dev server (required for workflow execution):
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+```bash
+pnpm inngest
+```
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## 📜 Key Features
 
-## Learn More
-
-To learn more about Next.js, take a look at the following resources:
-
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+- **Visual Workflow Builder**: Drag-and-drop interface creating complex logic flows.
+- **Serverless-Ready Execution**: Built on Inngest for reliable, durable background jobs.
+- **Type-Safe APIs**: Full end-to-end type safety with tRPC.
+- **Secure**: Authentication and authorization baked in.

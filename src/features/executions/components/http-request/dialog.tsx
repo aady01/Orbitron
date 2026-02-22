@@ -35,6 +35,12 @@ import { Button } from "@/components/ui/button";
 
 
 const formSchema = z.object({
+    variableName: z
+        .string()
+        .min(1, { message: "Variable name is reqired." })
+        .regex(/^[A-Za-z_$][A-Za-z0-9_$]*$/,
+            { message: "Variable name should only start with letter or underscore and container onyl letters, numbers, and Underscores" })
+    ,
     endpoint: z.url({ message: "Please enter a valid URL." }),
     method: z.enum(["GET", "POST", "PUT", "PATCH", "DELETE"]),
     body: z
@@ -61,6 +67,7 @@ export const HttpRequestDialog = ({
     const form = useForm<z.infer<typeof formSchema>>({
         resolver: zodResolver(formSchema),
         defaultValues: {
+            variableName: deafultValues.variableName || "",
             endpoint: deafultValues.endpoint || "",
             method: deafultValues.method,
             body: deafultValues.body || "",
@@ -70,6 +77,7 @@ export const HttpRequestDialog = ({
     useEffect(() => {
         if (open) {
             form.reset({
+                variableName: deafultValues.variableName || "",
                 endpoint: deafultValues.endpoint || "",
                 method: deafultValues.method,
                 body: deafultValues.body || ""
@@ -77,6 +85,7 @@ export const HttpRequestDialog = ({
         }
     }, [open, deafultValues, form])
 
+    const watchVariableName = form.watch("variableName") || "TheApiCall"
     const watchMethod = form.watch("method");
     const showBodyField = ["POST", "PUT", "PATCH"].includes(watchMethod);
     const handleSubmit = (values: z.infer<typeof formSchema>) => {
@@ -100,6 +109,21 @@ export const HttpRequestDialog = ({
                     <form onSubmit={form.handleSubmit(handleSubmit)}
                         className="space-y-8 mt-4"
                     >
+                        <FormField
+                            control={form.control}
+                            name="variableName"
+                            render={({ field }) => (
+                                <FormItem>
+                                    <FormLabel>Variable Name</FormLabel>
+                                    <Input placeholder="TheApiCall" {...field} />
+                                    <FormDescription>
+                                        Use this name to refer the result in  other Node: {" "}
+                                        {`{{${watchVariableName}.httpResponse.data}}`}
+                                    </FormDescription>
+                                    <FormMessage />
+                                </FormItem>
+                            )}
+                        />
                         <FormField
                             control={form.control}
                             name="method"

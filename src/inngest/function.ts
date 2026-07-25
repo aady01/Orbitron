@@ -6,9 +6,11 @@ import { NodeType } from "@/generated/prisma";
 import { getExecutor } from "@/features/executions/lib/executor-registry";
 
 export const executeWorkflow = inngest.createFunction(
-    {id:"execute-workflow"},
-    {event:"workflows/execute.workflow"},
-     async ({event,step})=>{
+  { 
+    id: "execute-workflow",
+    triggers: [{ event: "workflows/execute.workflow" }]
+  },
+  async ({ event, step }) => {
       const workflowId = event.data.workflowId;
 
       if(!workflowId){

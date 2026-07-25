@@ -47,3 +47,6 @@ next-env.d.ts
 
 #mprocs
 mprocs.log
+
+#agents
+.agents

@@ -16,11 +16,13 @@ export const trpc = createTRPCOptionsProxy({
 
 export const caller = appRouter.createCaller(createTRPCContext);
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function prefetch<T extends ReturnType<TRPCQueryOptions<any>>>(
     queryOptions: T,
 ) {
     const queryClient = getQueryClient();
     if (queryOptions.queryKey[1]?.type === 'infinite') {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         return queryClient.prefetchInfiniteQuery(queryOptions as any);
     } else {
         return queryClient.prefetchQuery(queryOptions);

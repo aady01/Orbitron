@@ -5,11 +5,14 @@ import { useSuspenseQuery } from "@tanstack/react-query";
 
 export const Client = () => {
     const trpc = useTRPC();
-    const { data: users } = useSuspenseQuery(trpc.getUsers.queryOptions());
+    const { data: workflows } = useSuspenseQuery(trpc.workflows.getMany.queryOptions({
+        page: 1,
+        search: "",
+    }));
 
     return (
         <div className="flex items-center justify-center ">
-            client component: {JSON.stringify(users)}
+            client component: {JSON.stringify(workflows)}
         </div>
     )
 }

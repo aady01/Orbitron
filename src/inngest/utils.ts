@@ -17,7 +17,7 @@ export const topologicalSort = (
     ])
 
     // add node with no connections as self-edges to ensure they're included.
-    const connectedNodeIds = new Set<String>();
+    const connectedNodeIds = new Set<string>();
     for(const con of connections){
         connectedNodeIds.add(con.fromNodeId);
         connectedNodeIds.add(con.toNodeId);

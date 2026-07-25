@@ -22,7 +22,7 @@ export function useEntitySearch<T extends {
                 setParams({
                     search: localSearch,
                     page: PAGINATION.DEFAULT_PAGE,
-                })
+                } as Partial<T>)
             }
         }, debounceMs);
         return () => clearTimeout(timer)

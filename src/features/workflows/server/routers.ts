@@ -3,7 +3,7 @@ import prisma from "@/lib/db";
 import type { Node , Edge } from "@xyflow/react";
 import { NodeType } from "@/generated/prisma";
 import { createTRPCRouter, protectedProcedure } from "@/trpc/init";
-import z from "zod";
+import { z } from "zod";
 import { PAGINATION } from "@/config/constants";
 import { inngest } from "@/inngest/client";
 

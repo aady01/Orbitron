@@ -9,14 +9,14 @@
     "inngest": "pnpm dlx inngest-cli@latest dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "ngrok:dev": "ngrok http --url=upfront-deferral-serving.ngrok-free.dev 3000"
   },
   "dependencies": {
     "@ai-sdk/anthropic": "^2.0.41",
     "@ai-sdk/google": "^2.0.24",
     "@ai-sdk/openai": "^2.0.64",
     "@hookform/resolvers": "^5.2.2",
-
     "@paralleldrive/cuid2": "^3.0.6",
     "@prisma/adapter-pg": "^7.2.0",
     "@prisma/client": "7.2.0",

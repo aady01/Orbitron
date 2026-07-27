@@ -25,27 +25,28 @@ export const httpRequestExecutor: NodeExecutor<HttpRequestData> = async ({
     step,
 }) =>{
 
+    // Non-durable publish for transient "loading" status
     await inngest.realtime.publish(httpRequestChannel.status, {
         nodeId,
         status: "loading",
     });
 
     if(!data.endpoint){
-        await inngest.realtime.publish(httpRequestChannel.status, {
+        await step.realtime.publish(`http-request-${nodeId}-error-endpoint`, httpRequestChannel.status, {
             nodeId,
             status: "error",
         });
         throw new NonRetriableError("HTTP Request node: No Endpoint Condigured.");
     }
     if(!data.variableName){
-        await inngest.realtime.publish(httpRequestChannel.status, {
+        await step.realtime.publish(`http-request-${nodeId}-error-var`, httpRequestChannel.status, {
             nodeId,
             status: "error",
         });
         throw new NonRetriableError("Variable Name is not configured.");
     }
     if(!data.method){
-        await inngest.realtime.publish(httpRequestChannel.status, {
+        await step.realtime.publish(`http-request-${nodeId}-error-method`, httpRequestChannel.status, {
             nodeId,
             status: "error",
         });
@@ -53,7 +54,7 @@ export const httpRequestExecutor: NodeExecutor<HttpRequestData> = async ({
     }
 
     try {
-        const result = await step.run("http-request",async()=>{
+        const result = await step.run(`http-request-${nodeId}-execute`,async()=>{
             const endpoint = Handlebars.compile(data.endpoint)(context);
             const method  = data.method;
             const options: KyOptions = {method}
@@ -88,14 +89,16 @@ export const httpRequestExecutor: NodeExecutor<HttpRequestData> = async ({
             }
         });
 
-        await inngest.realtime.publish(httpRequestChannel.status, {
+        // Durable publish for "success" — memoized, won't re-fire on retry
+        await step.realtime.publish(`http-request-${nodeId}-success`, httpRequestChannel.status, {
             nodeId,
             status: "success",
         });
 
         return result;
     } catch (error) {
-        await inngest.realtime.publish(httpRequestChannel.status, {
+        // Durable publish for "error" — memoized
+        await step.realtime.publish(`http-request-${nodeId}-error-catch`, httpRequestChannel.status, {
             nodeId,
             status: "error",
         });

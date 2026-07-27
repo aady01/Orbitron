@@ -17,7 +17,7 @@ export function useNodeStatus({
 }: UseNodeStatusOptions) {
   const [status, setStatus] = useState<NodeStatus>("initial");
 
-  const { messages } = useRealtime({
+  const { messages, connectionStatus } = useRealtime({
     channel,
     topics: [topic] as const,
     token: refreshToken,
@@ -25,6 +25,8 @@ export function useNodeStatus({
   });
 
   useEffect(() => {
+    console.log(`[useNodeStatus] [${nodeId}] connection:`, connectionStatus);
+    console.log(`[useNodeStatus] [${nodeId}] ALL messages:`, messages.all.length);
     if (!messages.all.length) {
       return;
     }
@@ -32,11 +34,22 @@ export function useNodeStatus({
     // Find the latest message for this node
     const latestMessage = messages.all
       .filter(
-        (msg) => 
-          msg.kind === "data" &&
-          msg.channel === channel &&
-          msg.topic === topic &&
-          (msg.data as Record<string, unknown>)?.nodeId === nodeId,
+        (msg) => {
+          const isData = msg.kind === "data";
+          const isChannelMatch = msg.channel === channel;
+          const isTopicMatch = msg.topic === topic;
+          const isNodeMatch = (msg.data as Record<string, unknown>)?.nodeId === nodeId;
+          
+          if (isData) {
+              console.log(`[useNodeStatus] Filter check:`, { 
+                  isChannelMatch, msgChannel: msg.channel, expectedChannel: channel,
+                  isTopicMatch, msgTopic: msg.topic, expectedTopic: topic,
+                  isNodeMatch, msgNodeId: (msg.data as Record<string, unknown>)?.nodeId, expectedNodeId: nodeId 
+              });
+          }
+          
+          return isData && isChannelMatch && isTopicMatch && isNodeMatch;
+        }
       )
       .sort((a, b) => {
         if (a.kind === "data" && b.kind === "data") {
@@ -48,9 +61,10 @@ export function useNodeStatus({
       })[0];
 
     if (latestMessage?.kind === "data") {
+      console.log(`[useNodeStatus] [${nodeId}] Setting status:`, (latestMessage.data as Record<string, unknown>)?.status);
       setStatus((latestMessage.data as Record<string, unknown>)?.status as NodeStatus);
     }
-  }, [messages, nodeId, channel, topic]);
+  }, [messages, nodeId, channel, topic, connectionStatus]);
 
   return status;
 };

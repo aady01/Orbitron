@@ -4,15 +4,19 @@ import { Pool } from "pg";
 
 const globalForPrisma = global as unknown as {
   prisma: PrismaClient;
+  pool: Pool;
+  adapter: PrismaPg;
 };
 
-// Create PostgreSQL connection pool
-const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,
-});
+// Create PostgreSQL connection pool, caching it in development
+const pool = 
+  globalForPrisma.pool || 
+  new Pool({
+    connectionString: process.env.DATABASE_URL,
+  });
 
-// Create Prisma adapter
-const adapter = new PrismaPg(pool);
+// Create Prisma adapter, caching it in development
+const adapter = globalForPrisma.adapter || new PrismaPg(pool);
 
 // Initialize Prisma Client with adapter
 const prisma =
@@ -22,6 +26,8 @@ const prisma =
   });
 
 if (process.env.NODE_ENV !== "production") {
+  globalForPrisma.pool = pool;
+  globalForPrisma.adapter = adapter;
   globalForPrisma.prisma = prisma;
 }
 

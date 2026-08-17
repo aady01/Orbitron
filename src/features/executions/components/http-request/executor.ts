@@ -1,11 +1,12 @@
-import Handlebars from "handlebars"
+// @ts-ignore
+import Handlebars from "handlebars/dist/handlebars.js";
 import type { NodeExecutor } from "@/features/executions/types";
 import { NonRetriableError } from "inngest";
 import ky, { type Options as KyOptions } from "ky";
 import { httpRequestChannel } from "@/inngest/channels/http-request";
 import { inngest } from "@/inngest/client";
 
-Handlebars.registerHelper("json", (context)=> {
+Handlebars.registerHelper("json", (context: any) => {
     const jsonString = JSON.stringify(context,null,2);
     const safeString = new Handlebars.SafeString(jsonString);
     return safeString; 

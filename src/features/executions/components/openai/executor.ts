@@ -1,12 +1,14 @@
-import Handlebars from "handlebars";
+// @ts-ignore
+import Handlebars from "handlebars/dist/handlebars.js";
 import { NonRetriableError } from "inngest";
 import { generateText } from "ai";
 import { createOpenAI } from "@ai-sdk/openai";
 import type { NodeExecutor } from "@/features/executions/types";
 import { openAiChannel } from "@/inngest/channels/openai";
 import { inngest } from "@/inngest/client";
+import prisma from "@/lib/db";
 
-Handlebars.registerHelper("json", (context) => {
+Handlebars.registerHelper("json", (context: any) => {
   const jsonString = JSON.stringify(context, null, 2);
   const safeString = new Handlebars.SafeString(jsonString);
 
@@ -15,6 +17,7 @@ Handlebars.registerHelper("json", (context) => {
 
 type OpenAiData = {
   variableName?: string;
+  credentialId?: string;
   systemPrompt?: string;
   userPrompt?: string;
 };
@@ -39,6 +42,14 @@ export const openAiExecutor: NodeExecutor<OpenAiData> = async ({
     throw new NonRetriableError("OpenAi node: Variable name is missing");
   }
 
+  if (!data.credentialId) {
+    await step.realtime.publish(`openai-${nodeId}-error-cred`, openAiChannel.status, {
+      nodeId,
+      status: "error",
+    });
+    throw new NonRetriableError("OpenAI node: Credential is required");
+  }
+
   if (!data.userPrompt) {
     await step.realtime.publish(`openai-${nodeId}-error-prompt`, openAiChannel.status, {
       nodeId,
@@ -52,11 +63,20 @@ export const openAiExecutor: NodeExecutor<OpenAiData> = async ({
     : "You are a helpful assistant.";
   const userPrompt = Handlebars.compile(data.userPrompt)(context);
 
-  // TODO: Fetch credential that user selected
-  const credentialValue = process.env.OPENAI_API_KEY!;
+  const credential = await step.run(`openai-${nodeId}-get-credential`, () => {
+    return prisma.credential.findUnique({
+      where: {
+        id: data.credentialId,
+      },
+    });
+  });
+
+  if (!credential) {
+    throw new NonRetriableError("OpenAI node: Credential not found");
+  }
 
   const openai = createOpenAI({
-    apiKey: credentialValue,
+    apiKey: credential.value,
   });
 
   try {

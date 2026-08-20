@@ -5,3 +5,5 @@ export const STRIPE_TRIGGER_CHANNEL_NAME = "stripe-trigger-execution";
 export const GEMINI_CHANNEL_NAME = "gemini-execution";
 export const OPENAI_CHANNEL_NAME = "openai-execution";
 export const ANTHROPIC_CHANNEL_NAME = "anthropic-execution";
+export const DISCORD_CHANNEL_NAME = "discord-execution";
+export const SLACK_CHANNEL_NAME = "slack-execution";

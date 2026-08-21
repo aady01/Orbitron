@@ -1,6 +1,7 @@
 import { Connection, Node } from "@/generated/prisma"
 import toposort from "toposort"
 import { inngest } from "./client"
+import { createId } from "@paralleldrive/cuid2"
 
 export const sendWorkflowExecution = (data: {
     workflowId: string;
@@ -9,8 +10,10 @@ export const sendWorkflowExecution = (data: {
     return inngest.send({
         name: "workflows/execute.workflow",
         data,
+        id: createId(),
     });
 };
+
 
 export const topologicalSort = (
     nodes: Node[],

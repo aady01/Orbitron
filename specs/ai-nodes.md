@@ -60,5 +60,5 @@ Files:
 
 ## 5. Assumptions & Open Questions
 
-- **API Key Management**: Currently, the executors pull provider credentials directly from global environment variables (`GOOGLE_GENERATIVE_AI_API_KEY`, `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`). A `TODO` exists in the code to implement a user-specific credential selection mechanism. In a multi-tenant production environment, users should be able to provide and select their own API keys via the UI.
+- **API Key Management**: The executors retrieve user-specific credentials from the database via the `credentialId` stored in the node's data payload. Credential values are encrypted at rest using AES-256-GCM (via the `cryptr` library) and are decrypted server-side only at the moment the AI provider client is initialized within the Inngest executor. See `specs/credentials.md` for the full encryption lifecycle.
 - **Model Selection**: The models are currently hardcoded in the executors (e.g., `gemini-2.0-flash`, `gpt-4`, `claude-sonnet-4-5`). Future iterations could expose a dropdown in the configuration dialog allowing users to select specific models based on cost/performance tradeoffs.

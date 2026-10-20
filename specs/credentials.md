@@ -23,7 +23,7 @@ The Credentials Management feature in Orbitron introduces a secure, centralized 
 
 Instead of relying on global environment variables, users can create, update, and manage their own credentials through the dashboard. These credentials can then be dynamically attached to specific workflow nodes (e.g., AI Nodes) directly from the node configuration dialog on the canvas.
 
-All credential values (API keys) are **encrypted at rest** using AES-256-GCM before being persisted to the database. Decryption happens exclusively in server-side executor code at the moment the credential is needed to initialize an AI provider client. Plaintext API keys are never stored in the database and never exposed to client-side code.
+All credential values (API keys) are **encrypted at rest** using AES-256-GCM before being persisted to the database. Decryption happens exclusively in the server-only credential vault at the moment an AI executor needs to initialize a provider client. The vault enforces credential ownership and provider type before decrypting. Plaintext API keys are never stored in the database and never exposed to client-side code.
 
 ## 2. Why This Feature is Needed
 
@@ -53,9 +53,9 @@ Encrypted ciphertext stored in PostgreSQL (Credential.value)
         ↓
         ... (later, during workflow execution) ...
         ↓
-Executor fetches Credential record from database
+Executor calls resolveCredentialSecret() in the server-only vault
         ↓
-decrypt(credential.value) via cryptr (server-side only)
+Vault checks owner + provider type, then decrypts
         ↓
 Decrypted plaintext API key used to initialize provider SDK
         ↓
@@ -65,9 +65,9 @@ Plaintext key discarded (not persisted or forwarded)
 ```
 
 1. **Creation/Editing**: Users navigate to the `/credentials` route to view a paginated, searchable list of their stored API keys. From here, they can add a new credential or edit an existing one. The form validates the input using Zod and sends a mutation via tRPC. On the server, the credential `value` is **encrypted** using the `encrypt()` function from `src/lib/encryption.ts` before being stored in the PostgreSQL database via Prisma.
-2. **Server-Side Hydration**: The credentials list and details pages utilize Next.js Server Components. Data is prefetched on the server using `prefetchCredentials` and hydrated into the client via `<HydrateClient>`. URL search params for pagination and search are managed using `nuqs`. Note: The `value` field returned to the client contains **encrypted ciphertext**, not plaintext.
-3. **Workflow Integration**: When a user configures a node that requires authentication (like the OpenAI node), the node dialog uses the `useCredentialsByType` hook to fetch and display only the relevant credentials. The selected `credentialId` is saved to the Node's data payload. The dialog only needs the credential `id` and `name` for selection — it does not need the `value`.
-4. **Execution**: During a workflow execution run, the executor checks the node's `data.credentialId`. If missing, the execution fails with a descriptive error. The executor fetches the credential record from the database using Prisma, then **decrypts** the `value` field using the `decrypt()` function to obtain the plaintext API key. This plaintext key is used exclusively to initialize the AI provider SDK client within the server-side Inngest step, and is never persisted or forwarded beyond that scope.
+2. **Server-Side Hydration**: The credentials list and details pages utilize Next.js Server Components. Data is prefetched on the server using `prefetchCredentials` and hydrated into the client via `<HydrateClient>`. URL search params for pagination and search are managed using `nuqs`. Read procedures return a summary containing `id`, `name`, `type`, `createdAt` and `updatedAt`; the encrypted `value` is never returned to the client.
+3. **Workflow Integration**: When a user configures a node that requires authentication (like the OpenAI node), the node dialog uses the `useCredentialsByType` hook to fetch and display only the relevant credentials. The selected `credentialId` is saved to the Node's data payload and to the `Node.credentialId` column. Saving validates that the credential belongs to the authenticated user and matches the node's provider type.
+4. **Execution**: During a workflow execution run, the executor checks the node's `data.credentialId`. If missing, the execution fails with a descriptive error. The executor calls `resolveCredentialSecret()` from the server-only credential vault with the workflow owner id and expected provider type. The vault performs the ownership/type checks and **decrypts** the `value` only after those checks pass. The plaintext key is used exclusively to initialize the AI provider SDK client within the server-side Inngest step, and is never persisted or forwarded beyond that scope.
 
 ## 4. Schema & Data Models
 
@@ -102,6 +102,7 @@ enum CredentialType {
 ### Node Model Update
 - Added an optional `credentialId` foreign key to `Node` to link workflow nodes to a specific user credential.
 - Uses `onDelete: SET NULL` so that deleting a credential nullifies the reference rather than cascading to the node.
+- `workflows.update` now persists this column from the node data payload and rejects credentials that are missing, owned by another user, or of the wrong provider type.
 
 ## 5. Encryption at Rest
 
@@ -148,10 +149,10 @@ export const decrypt = (text: string) => cryptr.decrypt(text);
 
 | Boundary | Plaintext Exposed? | Notes |
 |---|---|---|
-| Client-side UI (browser) | **No** | `getMany`, `getByType`, `getOne` queries return encrypted ciphertext in the `value` field. The client never receives usable API keys. |
+| Client-side UI (browser) | **No** | `getMany`, `getByType`, `getOne` queries return only `id`, `name`, `type` and timestamps. The client never receives the ciphertext or a usable API key. |
 | tRPC mutation (server) | **Briefly** | The plaintext value arrives via the tRPC mutation input, is encrypted immediately via `encrypt()`, and the plaintext is not persisted. |
 | Database (PostgreSQL) | **No** | Only AES-256-GCM ciphertext is stored in the `value` column. |
-| Executor (Inngest step) | **Briefly** | The ciphertext is decrypted via `decrypt()` only at the moment the AI provider client is initialized. The plaintext key is used for the API call and then discarded. |
+| Credential vault (server-only) | **Briefly** | `resolveCredentialSecret()` checks ownership and provider type, then decrypts only at the moment the AI provider client is initialized. The plaintext key is used for the API call and then discarded. |
 | Logs / Error messages | **No** | Encryption and decryption errors do not include the plaintext key or the raw ciphertext in their error messages. |
 | Workflow serialization | **No** | Credentials are referenced by `credentialId` in node data, not by value. The `value` is fetched separately during execution. |
 
@@ -160,17 +161,15 @@ export const decrypt = (text: string) => cryptr.decrypt(text);
 The `encrypt()` function is called in exactly two places in the credential tRPC router (`src/features/credentials/server/routers.ts`):
 
 1. **`create` mutation**: `value: encrypt(value)` — encrypts the API key before the initial `prisma.credential.create()` call.
-2. **`update` mutation**: `value: encrypt(value)` — encrypts the new API key before the `prisma.credential.update()` call. Since updates always require a `value` field (per the Zod schema), every update re-encrypts the provided value.
+2. **`update` mutation**: `value: encrypt(value)` — encrypts the API key only when a replacement value is supplied. Leaving the value blank preserves the stored ciphertext, preventing double encryption.
 
 ### Decryption Points
 
-The `decrypt()` function is called in exactly three executor files, all following the same pattern:
+The `decrypt()` function is called in exactly one server-only module:
 
-1. **OpenAI executor** (`src/features/executions/components/openai/executor.ts`): `apiKey: decrypt(credential.value)`
-2. **Anthropic executor** (`src/features/executions/components/anthropic/executor.ts`): `apiKey: decrypt(credential.value)`
-3. **Gemini executor** (`src/features/executions/components/gemini/executor.ts`): `apiKey: decrypt(credential.value)`
+- **Credential vault** (`src/features/credentials/server/credential-vault.ts`): `resolveCredentialSecret()` loads the credential scoped to `{ id, userId }`, verifies the provider type, and only then calls `decrypt(credential.value)`.
 
-In each case, the decrypted plaintext is passed directly to the provider SDK factory function (`createOpenAI`, `createAnthropic`, `createGoogleGenerativeAI`) as the `apiKey` parameter. The decrypted value is not stored in any variable with a longer lifetime than the immediate function scope.
+The OpenAI, Anthropic and Gemini executors consume `resolveCredentialSecret()` and pass the returned plaintext directly to `createOpenAI`, `createAnthropic` or `createGoogleGenerativeAI`. The decrypted value is not stored in any variable with a longer lifetime than the immediate function scope.
 
 ## 6. Backend Routers & State Management
 
@@ -183,14 +182,14 @@ Files:
 
 Implements CRUD procedures (`create`, `update`, `remove`, `getOne`, `getMany`, `getByType`). All queries are scoped to the authenticated user (`ctx.auth.user.id`).
 
-| Procedure | Type | Auth | Encryption Behavior |
+| Procedure | Type | Auth | Secret Behavior |
 |---|---|---|---|
-| `create` | Mutation | `protectedProcedure` | Encrypts `value` before `prisma.credential.create()` |
-| `update` | Mutation | `protectedProcedure` | Encrypts `value` before `prisma.credential.update()` |
-| `remove` | Mutation | `protectedProcedure` | No encryption involvement |
-| `getOne` | Query | `protectedProcedure` | Returns record as-is (value is ciphertext) |
-| `getMany` | Query | `protectedProcedure` | Returns records as-is (values are ciphertext) |
-| `getByType` | Query | `protectedProcedure` | Returns records as-is (values are ciphertext) |
+| `create` | Mutation | `protectedProcedure` | Encrypts `value`; returns a summary without `value` |
+| `update` | Mutation | `protectedProcedure` | Encrypts a supplied `value`; blank preserves the stored secret; returns a summary |
+| `remove` | Mutation | `protectedProcedure` | Returns a summary without `value` |
+| `getOne` | Query | `protectedProcedure` | Returns a summary without `value` |
+| `getMany` | Query | `protectedProcedure` | Returns summaries without `value` |
+| `getByType` | Query | `protectedProcedure` | Returns summaries without `value` |
 
 ### URL State
 Pagination (`page`, `pageSize`) and `search` are strictly typed and synced to the URL using `nuqs`.
@@ -202,7 +201,7 @@ Files:
 - `src/features/credentials/components/credential.tsx` (Form view)
 
 - **List View**: Displays a searchable, paginated list of credentials with logos identifying the credential type. Includes empty states, error boundaries, and loading skeletons. The list does not display credential values.
-- **Form View**: A standard `react-hook-form` connected to a Zod schema. Allows users to name their API key, select the provider (Type), and input the secret value. On submission, the plaintext value is sent to the server via tRPC where it is encrypted before persistence. The form always requires the full credential value for both creation and editing.
+- **Form View**: A standard `react-hook-form` connected to a Zod schema. Allows users to name their API key, select the provider (Type), and input the secret value. On submission, the plaintext value is sent to the server via tRPC where it is encrypted before persistence. Creation requires the secret; editing treats an empty secret as “keep the current key”. Changing provider type requires entering a new key.
 
 ## 8. Integration with AI Nodes
 
@@ -210,13 +209,14 @@ Files: `src/features/executions/components/{gemini,openai,anthropic}/*`
 
 - **Dialog Configuration**: Dialogs include a dropdown field for users to select a credential of the corresponding type. Only `credentialId` is stored in the node's data payload.
 - **Executor Guards**: Before processing the AI task, the executor verifies that `data.credentialId` exists.
-- **Credential Fetching**: The executor fetches the credential record from the database using `prisma.credential.findUnique()` within an Inngest `step.run()` block.
-- **Decryption**: The encrypted `credential.value` is decrypted using `decrypt()` and passed as `apiKey` to the respective provider SDK factory (`createOpenAI`, `createAnthropic`, `createGoogleGenerativeAI`).
+- **Credential Fetching**: The executor calls `resolveCredentialSecret()` within an Inngest `step.run()` block, passing the node's `credentialId`, the workflow owner id, and the expected provider type.
+- **Decryption**: The vault verifies ownership and type before decrypting, then returns the plaintext secret for the respective provider SDK factory (`createOpenAI`, `createAnthropic`, `createGoogleGenerativeAI`).
 
 ## 9. Validation, Errors, and Edge Cases
 
 ### Form Validation
-- Creating or updating a credential requires a `name` (min 1 char) and a `value` (min 1 char, the API key). The form will block submission and show inline errors if these fields are empty.
+- Creating a credential requires a `name` (min 1 char) and a `value` (min 1 char, the API key).
+- Updating a credential requires a `name`; `value` is optional. Leaving it blank preserves the stored secret. Changing the `type` without a new `value` is rejected.
 - The `type` field must be one of the `CredentialType` enum values (`OPENAI`, `ANTHROPIC`, `GEMINI`).
 
 ### Encryption Errors
@@ -224,13 +224,15 @@ Files: `src/features/executions/components/{gemini,openai,anthropic}/*`
 | Scenario | Behavior |
 |---|---|
 | `ENCRYPTION_KEY` not set | Application fails to start with a descriptive error message. The encryption module throws at import time. |
-| `ENCRYPTION_KEY` changed after credentials were stored | Previously encrypted credentials will fail to decrypt. The `decrypt()` call will throw an error. The executor will catch this and surface a safe error through Inngest's error handling. |
-| Invalid ciphertext passed to `decrypt()` | `cryptr.decrypt()` throws an error. The error does not contain the plaintext key. The executor's `try/catch` block handles this gracefully. |
-| Empty string passed to `encrypt()` | `cryptr` will encrypt the empty string. However, the Zod schema enforces `min(1)` on the `value` field, so this case is prevented at the validation layer. |
+| `ENCRYPTION_KEY` changed after credentials were stored | Previously encrypted credentials will fail to decrypt. The vault returns an `undecryptable` resolution and the executor throws a non-retriable error with a safe message. |
+| Invalid ciphertext passed to `decrypt()` | `cryptr.decrypt()` throws an error. The vault catches it, returns an `undecryptable` resolution, and never includes the ciphertext or plaintext in the message. |
+| Credential belongs to another user | The vault scopes the lookup by `userId` and returns `not_found`; the executor throws a non-retriable error. |
+| Credential type does not match the node provider | The vault returns `type_mismatch`; the executor throws a non-retriable error before initializing the provider client. |
+| Blank `value` on update | The router preserves the stored ciphertext. Changing the type in the same request is rejected. Create still requires `min(1)`. |
 
 ### Execution Safety
 - If a user triggers a workflow but the required AI node lacks a selected credential (`!data.credentialId`), the executor immediately halts. It publishes a durable "error" state to the UI via Inngest and throws a `NonRetriableError` to prevent empty API calls.
-- If the credential record is not found in the database (e.g., it was deleted after the node was configured), the executor throws a `NonRetriableError` with the message `"[Provider] node: Credential not found"`.
+- If the credential record is not found, belongs to another user, has the wrong type, or cannot be decrypted, the vault returns a safe resolution and the executor throws a `NonRetriableError` with a descriptive message.
 - If the decrypted API key is invalid (e.g., expired or revoked), the AI provider SDK will throw during the `generateText` call. The executor's `try/catch` publishes a durable "error" status before re-throwing.
 
 ### Deletion Safety
@@ -258,23 +260,24 @@ Files: `src/features/executions/components/{gemini,openai,anthropic}/*`
 |---|---|
 | `prisma/schema.prisma` | Credential model definition, CredentialType enum, Node-Credential relation |
 | `src/lib/encryption.ts` | Server-side encryption/decryption utility using `cryptr` and `ENCRYPTION_KEY` |
-| `src/features/credentials/server/routers.ts` | tRPC CRUD router with encryption on create/update mutations |
+| `src/features/credentials/server/routers.ts` | tRPC CRUD router with encryption on create/update mutations and secret-free read summaries |
+| `src/features/credentials/server/credential-vault.ts` | Server-only credential resolver enforcing ownership, provider type and safe decryption |
 | `src/features/credentials/server/prefetch.ts` | Server-side data prefetching for SSR |
 | `src/features/credentials/params.ts` | URL state parameters (pagination, search) via `nuqs` |
 | `src/features/credentials/hooks/use-credentials-by-type.ts` | Client hook to fetch credentials filtered by provider type |
 | `src/features/credentials/components/credentials.tsx` | Credentials list view UI |
 | `src/features/credentials/components/credential.tsx` | Credential create/edit form UI |
-| `src/features/executions/components/openai/executor.ts` | OpenAI executor with credential decryption |
-| `src/features/executions/components/anthropic/executor.ts` | Anthropic executor with credential decryption |
-| `src/features/executions/components/gemini/executor.ts` | Gemini executor with credential decryption |
+| `src/features/executions/components/openai/executor.ts` | OpenAI executor consuming the credential vault |
+| `src/features/executions/components/anthropic/executor.ts` | Anthropic executor consuming the credential vault |
+| `src/features/executions/components/gemini/executor.ts` | Gemini executor consuming the credential vault |
 
 ## 12. Acceptance Criteria
 
 1. **Encryption on creation**: When a user creates a new credential via the UI, the `value` stored in the database is AES-256-GCM encrypted ciphertext, not the plaintext API key.
-2. **Encryption on update**: When a user updates an existing credential, the new `value` is encrypted before persistence.
-3. **Decryption at execution**: When a workflow runs and reaches an AI node (OpenAI, Anthropic, or Gemini), the executor decrypts the stored credential value and passes the plaintext API key to the provider SDK.
+2. **Encryption on update**: When a user supplies a new `value`, it is encrypted before persistence. A blank value preserves the stored secret.
+3. **Decryption at execution**: When a workflow runs and reaches an AI node (OpenAI, Anthropic, or Gemini), the server-only credential vault verifies ownership and provider type before decrypting the value.
 4. **No plaintext in database**: At no point after this feature is implemented should a credential `value` column contain a plaintext API key for any newly created or updated credential.
-5. **No client-side decryption**: The `decrypt()` function is never imported or called in client-side code. All decryption happens in server-side executor code.
+5. **No client-side decryption**: The `decrypt()` function is never imported or called in client-side code. Read procedures never return the encrypted `value`; all decryption happens inside the server-only credential vault.
 6. **Missing key fails fast**: If `ENCRYPTION_KEY` is not set, the application fails to start with a clear error message.
 7. **Key stability**: The encryption key must remain stable. Changing it renders previously encrypted credentials permanently unusable.
 8. **Provider execution works end-to-end**: After encryption is implemented, AI nodes continue to function correctly — the user creates a credential, assigns it to an AI node, runs the workflow, and the AI provider receives a valid decrypted API key.
@@ -282,7 +285,7 @@ Files: `src/features/executions/components/{gemini,openai,anthropic}/*`
 
 ## 13. Assumptions & Open Questions
 
-- **No read-side filtering of `value`**: The `getMany`, `getByType`, and `getOne` queries return the full credential record including the encrypted `value` to the client. While this is safe (the value is ciphertext), a future improvement could omit the `value` field from query responses entirely using Prisma's `select` or `omit`, since the client never needs it.
+- **Read-side filtering resolved**: `getMany`, `getByType`, and `getOne` now return summaries without the encrypted `value`.
 - **Model Selection**: The models are currently hardcoded in the executors (e.g., `gemini-2.0-flash`, `gpt-4`, `claude-sonnet-4-5`). Future iterations could expose a dropdown in the configuration dialog allowing users to select specific models.
 - **Additional credential types**: If new credential types are added to `CredentialType` (e.g., for Slack, Discord, or other integrations), their executors should follow the same pattern of calling `decrypt()` on the credential value before use.
 - **Key rotation**: There is currently no support for encryption key rotation. If the `ENCRYPTION_KEY` needs to be changed, all existing credentials must be re-saved through the UI. A future migration utility could be built to re-encrypt existing credentials with a new key.

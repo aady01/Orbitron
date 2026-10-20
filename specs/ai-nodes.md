@@ -60,5 +60,5 @@ Files:
 
 ## 5. Assumptions & Open Questions
 
-- **API Key Management**: The executors retrieve user-specific credentials from the database via the `credentialId` stored in the node's data payload. Credential values are encrypted at rest using AES-256-GCM (via the `cryptr` library) and are decrypted server-side only at the moment the AI provider client is initialized within the Inngest executor. See `specs/credentials.md` for the full encryption lifecycle.
+- **API Key Management**: The executors retrieve user-specific credentials via the `credentialId` stored in the node's data payload. Credential values are encrypted at rest using AES-256-GCM (via the `cryptr` library). The server-only credential vault verifies the workflow owner and provider type before decrypting at the moment the AI provider client is initialized within the Inngest executor. See `specs/credentials.md` for the full encryption lifecycle.
 - **Model Selection**: The models are currently hardcoded in the executors (e.g., `gemini-2.0-flash`, `gpt-4`, `claude-sonnet-4-5`). Future iterations could expose a dropdown in the configuration dialog allowing users to select specific models based on cost/performance tradeoffs.

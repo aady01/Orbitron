@@ -14,6 +14,7 @@ import z from "zod";
 import {
   Form,
   FormControl,
+  FormDescription,
   FormField,
   FormItem,
   FormLabel,
@@ -40,7 +41,7 @@ import Link from "next/link";
 const formSchema = z.object({
   name: z.string().min(1, "Name is required"),
   type: z.enum(CredentialType),
-  value: z.string().min(1, "API key is required"),
+  value: z.string().optional(),
 });
 
 type FormValues = z.infer<typeof formSchema>;
@@ -68,7 +69,6 @@ interface CredentialFormProps {
     id?: string;
     name: string;
     type: CredentialType;
-    value: string;
   };
 }
 
@@ -81,25 +81,44 @@ export const CredentialForm = ({ initialData }: CredentialFormProps) => {
 
   const form = useForm<FormValues>({
     resolver: zodResolver(formSchema),
-    defaultValues: initialData || {
-      name: "",
-      type: CredentialType.OPENAI,
+    defaultValues: {
+      name: initialData?.name ?? "",
+      type: initialData?.type ?? CredentialType.OPENAI,
       value: "",
     },
   });
 
   const onSubmit = async (values: FormValues) => {
+    const hasNewValue = Boolean(values.value?.trim());
+
+    if (!isEdit && !hasNewValue) {
+      form.setError("value", {
+        type: "manual",
+        message: "API key is required",
+      });
+      return;
+    }
+
     if (isEdit && initialData?.id) {
       await updateCredential.mutateAsync({
         id: initialData.id,
-        ...values,
+        name: values.name,
+        type: values.type,
+        ...(hasNewValue ? { value: values.value } : {}),
       });
     } else {
-      await createCredential.mutateAsync(values, {
-        onSuccess: (data) => {
-          router.push(`/credentials/${data.id}`);
+      await createCredential.mutateAsync(
+        {
+          name: values.name,
+          type: values.type,
+          value: values.value!,
         },
-      });
+        {
+          onSuccess: (data) => {
+            router.push(`/credentials/${data.id}`);
+          },
+        }
+      );
     }
   };
 
@@ -162,6 +181,11 @@ export const CredentialForm = ({ initialData }: CredentialFormProps) => {
                       ))}
                     </SelectContent>
                   </Select>
+                  {isEdit && (
+                    <FormDescription>
+                      Changing the type requires entering a new API key.
+                    </FormDescription>
+                  )}
                   <FormMessage />
                 </FormItem>
               )}
@@ -172,14 +196,19 @@ export const CredentialForm = ({ initialData }: CredentialFormProps) => {
               name="value"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>API Key</FormLabel>
+                  <FormLabel>{isEdit ? "New API Key" : "API Key"}</FormLabel>
                   <FormControl>
                     <Input
                       type="password"
-                      placeholder="sk-..."
+                      placeholder={isEdit ? "Leave blank to keep current key" : "sk-..."}
                       {...field}
                     />
                   </FormControl>
+                  {isEdit && (
+                    <FormDescription>
+                      Leave blank to keep the current API key.
+                    </FormDescription>
+                  )}
                   <FormMessage />
                 </FormItem>
               )}

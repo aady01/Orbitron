@@ -1,9 +1,18 @@
 import prisma from "@/lib/db";
 import { createTRPCRouter, protectedProcedure } from "@/trpc/init";
+import { TRPCError } from "@trpc/server";
 import z from "zod";
 import { PAGINATION } from "@/config/constants";
 import { CredentialType } from "@/generated/prisma";
 import { encrypt } from "@/lib/encryption";
+
+const credentialSummarySelect = {
+  id: true,
+  name: true,
+  type: true,
+  createdAt: true,
+  updatedAt: true,
+} as const;
 
 export const credentialsRouter = createTRPCRouter({
   create: protectedProcedure
@@ -24,6 +33,7 @@ export const credentialsRouter = createTRPCRouter({
           type,
           value: encrypt(value),
         },
+        select: credentialSummarySelect,
       });
     }),
   remove: protectedProcedure
@@ -34,6 +44,7 @@ export const credentialsRouter = createTRPCRouter({
           id: input.id,
           userId: ctx.auth.user.id,
         },
+        select: credentialSummarySelect,
       });
     }),
   update: protectedProcedure
@@ -42,19 +53,35 @@ export const credentialsRouter = createTRPCRouter({
         id: z.string(),
         name: z.string().min(1, "Name is required"),
         type: z.enum(CredentialType),
-        value: z.string().min(1, "Value is required"),
+        value: z.string().optional(),
       })
     )
-    .mutation(({ ctx, input }) => {
+    .mutation(async ({ ctx, input }) => {
       const { id, name, type, value } = input;
+      const shouldReplaceValue = Boolean(value?.trim());
+
+      if (!shouldReplaceValue) {
+        const existingCredential = await prisma.credential.findUniqueOrThrow({
+          where: { id, userId: ctx.auth.user.id },
+          select: { type: true },
+        });
+
+        if (existingCredential.type !== type) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: "Enter a new API key to change the credential type",
+          });
+        }
+      }
 
       return prisma.credential.update({
         where: { id, userId: ctx.auth.user.id },
         data: {
           name,
           type,
-          value: encrypt(value),
+          ...(shouldReplaceValue ? { value: encrypt(value!) } : {}),
         },
+        select: credentialSummarySelect,
       });
     }),
   getOne: protectedProcedure
@@ -62,6 +89,7 @@ export const credentialsRouter = createTRPCRouter({
     .query(({ ctx, input }) => {
       return prisma.credential.findUniqueOrThrow({
         where: { id: input.id, userId: ctx.auth.user.id },
+        select: credentialSummarySelect,
       });
     }),
   getMany: protectedProcedure
@@ -93,6 +121,7 @@ export const credentialsRouter = createTRPCRouter({
           orderBy: {
             updatedAt: "desc",
           },
+          select: credentialSummarySelect,
         }),
         prisma.credential.count({
           where: {
@@ -133,6 +162,7 @@ export const credentialsRouter = createTRPCRouter({
         orderBy: {
           updatedAt: "desc",
         },
+        select: credentialSummarySelect,
       });
     }),
 });

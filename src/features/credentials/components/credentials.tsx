@@ -19,9 +19,16 @@ import {
 import { useRouter } from "next/navigation";
 import { useCredentialsParams } from "../hooks/use-credentials-params";
 import { useEntitySearch } from "@/features/workflows/hooks/use-entity-search";
-import type { Credential } from "@/generated/prisma";
 import { CredentialType } from "@/generated/prisma";
 import Image from "next/image";
+
+type CredentialSummary = {
+  id: string;
+  name: string;
+  type: CredentialType;
+  createdAt: Date;
+  updatedAt: Date;
+};
 
 export const CredentialsSearch = () => {
   const [params, setParams] = useCredentialsParams();
@@ -123,7 +130,7 @@ const credentialLogos: Record<CredentialType, string> = {
   [CredentialType.GEMINI]: "/logos/gemini.svg",
 };
 
-export const CredentialItem = ({ data }: { data: Credential }) => {
+export const CredentialItem = ({ data }: { data: CredentialSummary }) => {
   const removeCredential = useRemoveCredential();
 
   const handleRemove = () => {

@@ -6,8 +6,8 @@ import { createAnthropic } from "@ai-sdk/anthropic";
 import type { NodeExecutor } from "@/features/executions/types";
 import { anthropicChannel } from "@/inngest/channels/anthropic";
 import { inngest } from "@/inngest/client";
-import prisma from "@/lib/db";
-import { decrypt } from "@/lib/encryption";
+import { CredentialType } from "@/generated/prisma";
+import { resolveCredentialSecret } from "@/features/credentials/server/credential-vault";
 
 Handlebars.registerHelper("json", (context: any) => {
   const jsonString = JSON.stringify(context, null, 2);
@@ -26,6 +26,7 @@ type AnthropicData = {
 export const anthropicExecutor: NodeExecutor<AnthropicData> = async ({
   data,
   nodeId,
+  ownerId,
   context,
   step,
 }) => {
@@ -65,19 +66,23 @@ export const anthropicExecutor: NodeExecutor<AnthropicData> = async ({
   const userPrompt = Handlebars.compile(data.userPrompt)(context);
 
   const credential = await step.run(`anthropic-${nodeId}-get-credential`, () => {
-    return prisma.credential.findUnique({
-      where: {
-        id: data.credentialId,
-      },
+    return resolveCredentialSecret({
+      credentialId: data.credentialId!,
+      ownerId,
+      expectedType: CredentialType.ANTHROPIC,
     });
   });
 
-  if (!credential) {
-    throw new NonRetriableError("Anthropic node: Credential not found");
+  if (!credential.ok) {
+    await step.realtime.publish(`anthropic-${nodeId}-error-credential`, anthropicChannel.status, {
+      nodeId,
+      status: "error",
+    });
+    throw new NonRetriableError(`Anthropic node: ${credential.message}`);
   }
 
   const anthropic = createAnthropic({
-    apiKey: decrypt(credential.value),
+    apiKey: credential.secret,
   });
 
   try {

@@ -38,7 +38,7 @@ export const executeWorkflow = inngest.createFunction(
       });
     });
 
-    const sortedNodes = await step.run("prepare-workflow", async () => {
+    const { sortedNodes, ownerId } = await step.run("prepare-workflow", async () => {
       const workflow = await prisma.workflow.findUniqueOrThrow({
         where: {
           id: workflowId,
@@ -48,7 +48,11 @@ export const executeWorkflow = inngest.createFunction(
           connections: true
         }
       })
-      return topologicalSort(workflow.nodes, workflow.connections)
+
+      return {
+        sortedNodes: topologicalSort(workflow.nodes, workflow.connections),
+        ownerId: workflow.userId,
+      }
     })
 
     // intialize the context with any initial data from the trigger.
@@ -60,6 +64,7 @@ export const executeWorkflow = inngest.createFunction(
       context = await executor({
         data: node.data as Record<string, unknown>,
         nodeId: node.id,
+        ownerId,
         context,
         step,
       })

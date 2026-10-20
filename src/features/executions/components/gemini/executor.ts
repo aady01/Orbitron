@@ -6,8 +6,8 @@ import { createGoogleGenerativeAI } from "@ai-sdk/google";
 import type { NodeExecutor } from "@/features/executions/types";
 import { geminiChannel } from "@/inngest/channels/gemini";
 import { inngest } from "@/inngest/client";
-import prisma from "@/lib/db";
-import { decrypt } from "@/lib/encryption";
+import { CredentialType } from "@/generated/prisma";
+import { resolveCredentialSecret } from "@/features/credentials/server/credential-vault";
 
 Handlebars.registerHelper("json", (context: any) => {
   const jsonString = JSON.stringify(context, null, 2);
@@ -26,6 +26,7 @@ type GeminiData = {
 export const geminiExecutor: NodeExecutor<GeminiData> = async ({
   data,
   nodeId,
+  ownerId,
   context,
   step,
 }) => {
@@ -65,19 +66,23 @@ export const geminiExecutor: NodeExecutor<GeminiData> = async ({
   const userPrompt = Handlebars.compile(data.userPrompt)(context);
 
   const credential = await step.run(`gemini-${nodeId}-get-credential`, () => {
-    return prisma.credential.findUnique({
-      where: {
-        id: data.credentialId,
-      },
+    return resolveCredentialSecret({
+      credentialId: data.credentialId!,
+      ownerId,
+      expectedType: CredentialType.GEMINI,
     });
   });
 
-  if (!credential) {
-    throw new NonRetriableError("Gemini node: Credential not found");
+  if (!credential.ok) {
+    await step.realtime.publish(`gemini-${nodeId}-error-credential`, geminiChannel.status, {
+      nodeId,
+      status: "error",
+    });
+    throw new NonRetriableError(`Gemini node: ${credential.message}`);
   }
 
   const google = createGoogleGenerativeAI({
-    apiKey: decrypt(credential.value),
+    apiKey: credential.secret,
   });
 
   try {

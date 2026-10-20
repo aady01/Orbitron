@@ -1,11 +1,18 @@
 import { generateSlug } from "random-word-slugs";
 import prisma from "@/lib/db";
 import type { Node , Edge } from "@xyflow/react";
-import { NodeType } from "@/generated/prisma";
+import { CredentialType, NodeType } from "@/generated/prisma";
 import { createTRPCRouter, protectedProcedure } from "@/trpc/init";
+import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import { PAGINATION } from "@/config/constants";
 import { sendWorkflowExecution } from "@/inngest/utils";
+
+const credentialTypeByNodeType: Partial<Record<NodeType, CredentialType>> = {
+  [NodeType.OPENAI]: CredentialType.OPENAI,
+  [NodeType.ANTHROPIC]: CredentialType.ANTHROPIC,
+  [NodeType.GEMINI]: CredentialType.GEMINI,
+};
 
 export const workflowsRouter = createTRPCRouter({
   execute: protectedProcedure
@@ -80,6 +87,67 @@ export const workflowsRouter = createTRPCRouter({
         where:{id,userId: ctx.auth.user.id}
       })
 
+      const credentialIds = [
+        ...new Set(
+          nodes
+            .map((node) => node.data?.credentialId)
+            .filter((credentialId): credentialId is string =>
+              typeof credentialId === "string" && credentialId.length > 0
+            )
+        ),
+      ]
+
+      if (credentialIds.length > 0) {
+        const credentials = await prisma.credential.findMany({
+          where: {
+            id: { in: credentialIds },
+            userId: ctx.auth.user.id,
+          },
+          select: {
+            id: true,
+            type: true,
+          },
+        });
+        const credentialsById = new Map(
+          credentials.map((credential) => [credential.id, credential])
+        );
+
+        for (const node of nodes) {
+          const credentialId = node.data?.credentialId;
+
+          if (typeof credentialId !== "string" || credentialId.length === 0) {
+            continue;
+          }
+
+          const expectedType = node.type
+            ? credentialTypeByNodeType[node.type as NodeType]
+            : undefined;
+
+          if (!expectedType) {
+            throw new TRPCError({
+              code: "BAD_REQUEST",
+              message: `Node "${node.id}" does not support credentials`,
+            });
+          }
+
+          const credential = credentialsById.get(credentialId);
+
+          if (!credential) {
+            throw new TRPCError({
+              code: "BAD_REQUEST",
+              message: `Credential "${credentialId}" was not found`,
+            });
+          }
+
+          if (credential.type !== expectedType) {
+            throw new TRPCError({
+              code: "BAD_REQUEST",
+              message: `Credential "${credentialId}" must be of type ${expectedType}`,
+            });
+          }
+        }
+      }
+
       return await prisma.$transaction(async(tnx)=>{
 
         await tnx.node.deleteMany({
@@ -93,7 +161,11 @@ export const workflowsRouter = createTRPCRouter({
           name: node.type || "unknown",
           type: node.type as NodeType,
           position: node.position,
-          data: node.data || {}
+          data: node.data || {},
+          credentialId:
+            typeof node.data?.credentialId === "string"
+              ? node.data.credentialId
+              : null,
         })),
         })
 

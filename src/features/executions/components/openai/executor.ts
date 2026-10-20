@@ -6,8 +6,8 @@ import { createOpenAI } from "@ai-sdk/openai";
 import type { NodeExecutor } from "@/features/executions/types";
 import { openAiChannel } from "@/inngest/channels/openai";
 import { inngest } from "@/inngest/client";
-import prisma from "@/lib/db";
-import { decrypt } from "@/lib/encryption";
+import { CredentialType } from "@/generated/prisma";
+import { resolveCredentialSecret } from "@/features/credentials/server/credential-vault";
 
 Handlebars.registerHelper("json", (context: any) => {
   const jsonString = JSON.stringify(context, null, 2);
@@ -26,6 +26,7 @@ type OpenAiData = {
 export const openAiExecutor: NodeExecutor<OpenAiData> = async ({
   data,
   nodeId,
+  ownerId,
   context,
   step,
 }) => {
@@ -65,19 +66,23 @@ export const openAiExecutor: NodeExecutor<OpenAiData> = async ({
   const userPrompt = Handlebars.compile(data.userPrompt)(context);
 
   const credential = await step.run(`openai-${nodeId}-get-credential`, () => {
-    return prisma.credential.findUnique({
-      where: {
-        id: data.credentialId,
-      },
+    return resolveCredentialSecret({
+      credentialId: data.credentialId!,
+      ownerId,
+      expectedType: CredentialType.OPENAI,
     });
   });
 
-  if (!credential) {
-    throw new NonRetriableError("OpenAI node: Credential not found");
+  if (!credential.ok) {
+    await step.realtime.publish(`openai-${nodeId}-error-credential`, openAiChannel.status, {
+      nodeId,
+      status: "error",
+    });
+    throw new NonRetriableError(`OpenAI node: ${credential.message}`);
   }
 
   const openai = createOpenAI({
-    apiKey: decrypt(credential.value),
+    apiKey: credential.secret,
   });
 
   try {

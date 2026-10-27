@@ -22,11 +22,31 @@ export const workflowsRouter = createTRPCRouter({
       where: {
         id: input.id,
         userId : ctx.auth.user.id
-      }
+      },
+      include: {
+        nodes: {
+          select: {
+            id: true,
+            type: true,
+          },
+        },
+      },
     })
+
+    const triggerNode = workflow.nodes.find(
+      (node) => node.type === NodeType.MANUAL_TRIGGER
+    );
+
+    if (!triggerNode) {
+      throw new TRPCError({
+        code: "BAD_REQUEST",
+        message: "Workflow has no manual trigger",
+      });
+    }
 
     await sendWorkflowExecution({
       workflowId: input.id,
+      triggerNodeId: triggerNode.id,
     })
 
     return workflow

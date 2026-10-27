@@ -9,6 +9,7 @@
     "inngest": "pnpm dlx inngest-cli@latest dev",
     "build": "next build",
     "start": "next start",
+    "test": "tsx --test \"src/**/*.test.ts\"",
     "lint": "eslint",
     "ngrok:dev": "ngrok http --url=upfront-deferral-serving.ngrok-free.dev 3000"
   },
@@ -61,7 +62,6 @@
     "sonner": "^2.0.7",
     "superjson": "^2.2.6",
     "tailwind-merge": "^3.3.1",
-    "toposort": "^2.0.2",
     "zod": "^4.1.12"
   },
   "devDependencies": {
@@ -71,7 +71,6 @@
     "@types/pg": "^8.16.0",
     "@types/react": "^19",
     "@types/react-dom": "^19",
-    "@types/toposort": "^2.0.7",
     "dotenv": "^17.2.3",
     "eslint": "^9",
     "eslint-config-next": "15.5.6",

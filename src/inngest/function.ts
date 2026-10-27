@@ -1,8 +1,8 @@
 import { NonRetriableError } from "inngest";
 import { inngest } from "./client";
 import prisma from "@/lib/db";
-import { topologicalSort } from "./utils";
-import { ExecutionStatus, NodeType } from "@/generated/prisma";
+import { createExecutionPlan, runExecutionPlan } from "./execution-plan";
+import { ExecutionStatus, NodeType, type Prisma } from "@/generated/prisma";
 import { getExecutor } from "@/features/executions/lib/executor-registry";
 
 export const executeWorkflow = inngest.createFunction(
@@ -38,7 +38,17 @@ export const executeWorkflow = inngest.createFunction(
       });
     });
 
-    const { sortedNodes, ownerId } = await step.run("prepare-workflow", async () => {
+    const triggerNodeId =
+      typeof event.data.triggerNodeId === "string" &&
+      event.data.triggerNodeId.length > 0
+        ? event.data.triggerNodeId
+        : undefined;
+    const triggerType =
+      typeof event.data.triggerType === "string"
+        ? (event.data.triggerType as NodeType)
+        : undefined;
+
+    const { plan, nodes, ownerId } = await step.run("prepare-workflow", async () => {
       const workflow = await prisma.workflow.findUniqueOrThrow({
         where: {
           id: workflowId,
@@ -50,25 +60,33 @@ export const executeWorkflow = inngest.createFunction(
       })
 
       return {
-        sortedNodes: topologicalSort(workflow.nodes, workflow.connections),
+        plan: createExecutionPlan({
+          nodes: workflow.nodes,
+          connections: workflow.connections,
+          entryNodeId: triggerNodeId,
+          entryNodeType: triggerType,
+        }),
+        nodes: workflow.nodes,
         ownerId: workflow.userId,
       }
     })
 
-    // intialize the context with any initial data from the trigger.
-    let context = event.data.initialData || {};
-
-    // execution of each node
-    for (const node of sortedNodes) {
-      const executor = getExecutor(node.type as NodeType);
-      context = await executor({
-        data: node.data as Record<string, unknown>,
-        nodeId: node.id,
-        ownerId,
-        context,
-        step,
-      })
-    }
+    const initialContext = event.data.initialData || {};
+    const context = await runExecutionPlan({
+      plan,
+      nodes,
+      initialContext,
+      execute: (node, stageContext) => {
+        const executor = getExecutor(node.type);
+        return executor({
+          data: node.data as Record<string, unknown>,
+          nodeId: node.id,
+          ownerId,
+          context: stageContext,
+          step,
+        });
+      },
+    });
 
     await step.run("update-execution", async () => {
       return prisma.execution.update({
@@ -76,7 +94,7 @@ export const executeWorkflow = inngest.createFunction(
         data: {
           status: ExecutionStatus.SUCCESS,
           completedAt: new Date(),
-          output: context,
+          output: context as Prisma.InputJsonValue,
         },
       })
     });

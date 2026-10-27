@@ -11,9 +11,9 @@ The integration spans from Stripe's infrastructure (webhooks) to our local Next.
 ### Request / Response Lifecycle
 1. **Event Triggered**: An event occurs in the user's Stripe account (e.g., `payment_intent.succeeded`).
 2. **Stripe Webhook**: Stripe fires a POST request with a JSON payload of the event data to the configured Orbitron webhook URL.
-3. **Webhook Receiver**: The `/api/webhooks/stripe` Next.js route receives the payload. It extracts the `workflowId` from the URL search parameters and maps the Stripe payload to a standard structure.
-4. **Trigger Inngest**: The webhook calls `sendWorkflowExecution()`, dispatching a `workflows/execute.workflow` event to the Inngest broker with the `stripe` event details embedded in `initialData`.
-5. **Workflow Orchestrator**: The Inngest background job (`execute-workflow`) starts and sorts the workflow nodes topologically.
+3. **Webhook Receiver**: The `/api/webhooks/stripe` Next.js route receives the payload. It extracts `workflowId` and the optional `triggerNodeId` from the URL search parameters and maps the Stripe payload to a standard structure.
+4. **Trigger Inngest**: The webhook calls `sendWorkflowExecution()`, dispatching a `workflows/execute.workflow` event with `triggerNodeId`, `triggerType: STRIPE_TRIGGER`, and the `stripe` details in `initialData`. The trigger type keeps older URLs without a node id working.
+5. **Workflow Orchestrator**: The Inngest background job (`execute-workflow`) starts, builds an execution plan rooted at the Stripe trigger, and stages the graph.
 6. **Node Execution**: The `stripeTriggerExecutor` runs. It signals the UI that it is "loading" via a non-durable publish, outputs the initial context, and then signals "success" via a durable publish.
 7. **Real-time Feedback**: The React Flow UI (`StripeTriggerNode`), listening to the Inngest Realtime channel, updates its visual status based on the messages received, displaying a green checkmark on success.
 
@@ -32,12 +32,12 @@ File: `src/features/triggers/components/stripe-trigger/node.tsx`
 ### 3.3 Configuration Dialog
 File: `src/features/triggers/components/stripe-trigger/dialog.tsx`
 - **Responsibility**: Provides the user with setup instructions to configure the webhook in the Stripe Developer Dashboard.
-- **Webhook Details**: Displays the dynamically generated webhook URL including the `workflowId` parameter. It also shows a copy button and documentation for available variables like `{{stripe.amount}}`, `{{stripe.currency}}`, etc.
+- **Webhook Details**: Displays the dynamically generated webhook URL including the `workflowId` and `triggerNodeId` parameters. It also shows a copy button and documentation for available variables like `{{stripe.amount}}`, `{{stripe.currency}}`, etc.
 
 ### 3.4 Webhook Endpoint
 File: `src/app/api/webhooks/stripe/route.ts`
 - **Responsibility**: Serves as the public webhook endpoint for Stripe events.
-- **Validation**: Rejects requests missing the `workflowId` query parameter (400 Bad Request).
+- **Validation**: Rejects requests missing the `workflowId` query parameter (400 Bad Request). `triggerNodeId` is optional for backward compatibility.
 - **Data Structure**: Extracts event metadata like `eventId`, `eventType`, `timestamp`, `livemode`, and the `raw` data object, forwarding them into the workflow's `initialData.stripe`.
 
 ### 3.5 Execution & State Management

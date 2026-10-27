@@ -11,9 +11,9 @@ The integration spans from Google Apps Script running on Google's infrastructure
 ### Request / Response Lifecycle
 1. **Form Submission**: A user submits a Google Form.
 2. **Google Apps Script**: An `onFormSubmit(e)` script attached to the form captures the submission. It transforms the answers into a JSON map (`{ "Question Title": "Answer" }`) and issues an HTTP POST to our webhook URL.
-3. **Webhook Receiver**: The `/api/webhooks/google-form` Next.js route receives the payload. It extracts the `workflowId` from the URL search parameters and formats the body payload.
-4. **Trigger Inngest**: The webhook calls `sendWorkflowExecution()`, dispatching a `workflows/execute.workflow` event to the Inngest broker with `googleForm` embedded in `initialData`.
-5. **Workflow Orchestrator**: The Inngest background job (`execute-workflow`) starts. It sorts the workflow nodes topologically.
+3. **Webhook Receiver**: The `/api/webhooks/google-form` Next.js route receives the payload. It extracts `workflowId` and the optional `triggerNodeId` from the URL search parameters and formats the body payload.
+4. **Trigger Inngest**: The webhook calls `sendWorkflowExecution()`, dispatching a `workflows/execute.workflow` event with `triggerNodeId`, `triggerType: GOOGLE_FORM_TRIGGER`, and `googleForm` in `initialData`. The trigger type keeps older URLs without a node id working.
+5. **Workflow Orchestrator**: The Inngest background job (`execute-workflow`) starts, builds an execution plan rooted at the Google Form trigger, and stages the graph.
 6. **Node Execution**: The `googleFormTriggerExecutor` runs. It signals the UI that it is "loading", outputs the initial context, and then signals "success".
 7. **Real-time Feedback**: The React Flow UI (`GoogleFormTriggerNode`), listening to the Inngest Realtime channel, updates its visual status based on the messages received, displaying a green checkmark on success.
 
@@ -34,12 +34,12 @@ Files:
 - `src/features/triggers/components/google-form-trigger/dialog.tsx`
 - `src/features/triggers/components/google-form-trigger/utils.ts`
 - **Responsibility**: Provides the user with setup instructions and the generated Google Apps Script.
-- **Script Details**: The `generateGoogleFormScript` dynamically embeds the webhook URL (using `NEXT_PUBLIC_APP_URL` or localhost) and includes the `workflowId` parameter. It maps `itemResponse.getItem().getTitle()` to `itemResponse.getResponse()` to create an intuitive data payload.
+- **Script Details**: The `generateGoogleFormScript` dynamically embeds the webhook URL (using `NEXT_PUBLIC_APP_URL` or localhost) with `workflowId` and `triggerNodeId` parameters. It maps `itemResponse.getItem().getTitle()` to `itemResponse.getResponse()` to create an intuitive data payload.
 
 ### 3.4 Webhook Endpoint
 File: `src/app/api/webhooks/google-form/route.ts`
 - **Responsibility**: Serves as the public endpoint for Google Forms.
-- **Validation**: Rejects requests missing the `workflowId` query parameter.
+- **Validation**: Rejects requests missing the `workflowId` query parameter. `triggerNodeId` is optional for backward compatibility.
 - **Data Structure**: Extracts `formId`, `formTitle`, `responseId`, `timestamp`, `respondentEmail`, and the `responses` mapping, forwarding them into the workflow's `initialData`.
 
 ### 3.5 Execution & State Management

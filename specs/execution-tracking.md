@@ -61,7 +61,7 @@ sequenceDiagram
 
     Trigger->>Inngest: Send event (with unique cuid2 ID)
     Inngest->>DB: Step 1: Create Execution (RUNNING)
-    Inngest->>Inngest: Step 2: Prepare workflow (topological sort)
+    Inngest->>Inngest: Step 2: Prepare workflow (execution plan)
     Inngest->>Inngest: Steps 3..N: Execute each node
     alt Success
         Inngest->>DB: Final Step: Update Execution (SUCCESS + output)
@@ -218,7 +218,16 @@ await step.run("create-execution", async () => {
 
 #### Phase 2: Execute Workflow Nodes
 
-The existing workflow execution logic remains unchanged: topological sort, context initialization, sequential node execution. Each node executor receives the accumulated context and produces a modified context for the next node.
+The workflow is compiled into an execution plan before any node runs. The plan:
+
+- Resolves the entry trigger from `triggerNodeId`, then `triggerType`, then the first trigger in stored order.
+- Validates that every connection points at a node in the same workflow.
+- Rejects incoming connections on the trigger and true cycles.
+- Accepts disconnected nodes instead of turning them into self-edges.
+- Emits deterministic stages. Nodes in the same stage are siblings and all receive the same base context.
+- Runs the trigger component first, then detached components in stored order.
+
+Each node executor receives its stage's base context and returns the full workflow context. After a stage completes, its results are shallow-merged into the next stage's base context. This prevents one fan-out branch from observing a sibling's writes while still allowing fan-in nodes to see every branch output. If two siblings write different values to the same top-level context key, the plan fails with a `context_conflict` instead of silently choosing one.
 
 #### Phase 3: Mark Success
 
@@ -638,6 +647,8 @@ stateDiagram-v2
 | `src/features/executions/server/routers.ts` | tRPC router with `getOne` and `getMany` procedures |
 | `src/features/executions/server/params-loader.ts` | Server-side nuqs parameter loader |
 | `src/features/executions/server/prefetch.ts` | Server-side tRPC prefetch helpers |
+| `src/inngest/execution-plan.ts` | Trigger resolution, graph validation, staged execution plan, and stage runner |
+| `src/inngest/execution-plan.test.ts` | Regression tests for cycles, disconnected nodes, trigger selection, fan-out context isolation, and fan-in merging |
 | `src/features/executions/hooks/use-executions.ts` | React suspense query hooks |
 | `src/features/executions/hooks/use-executions-params.ts` | React hook for URL pagination state |
 | `src/features/executions/components/executions.tsx` | Executions list page UI components |
@@ -656,6 +667,11 @@ stateDiagram-v2
 ### Execution Lifecycle
 - [ ] When a workflow is triggered, a new `Execution` record is created with `status = RUNNING`.
 - [ ] Each Inngest event receives a unique `cuid2` identifier stored as `inngestEventId`.
+- [ ] Manual runs dispatch the manual trigger node id; webhook runs dispatch `triggerNodeId` plus their trigger type.
+- [ ] Disconnected nodes are accepted and executed in detached stages instead of failing as a false cycle.
+- [ ] True cycles and connections to unknown nodes fail before any node executes.
+- [ ] Fan-out siblings receive the same base context; fan-in nodes see the merged outputs.
+- [ ] Conflicting sibling writes to the same top-level context key fail with `context_conflict`.
 - [ ] On successful completion, the execution transitions to `SUCCESS` with `completedAt` and `output` populated.
 - [ ] On failure, the `onFailure` handler transitions the execution to `FAILED` with `error` and `errorStack` populated.
 - [ ] Missing `event.id` or `workflowId` immediately throws `NonRetriableError` without creating a record.

@@ -10,6 +10,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { useNodeId } from "@xyflow/react";
 import { CopyIcon } from "lucide-react";
 import { useParams } from "next/navigation";
 import { toast } from "sonner";
@@ -25,11 +26,12 @@ export const StripeTriggerDialog = ({
 }: Props) => {
   const params = useParams();
   const workflowId = params.workflowId as string;
+  const nodeId = useNodeId();
 
   // Construct the webhook URL
   const baseUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000"
   const webhookUrl = 
-    `${baseUrl}/api/webhooks/stripe?workflowId=${workflowId}`;
+    `${baseUrl}/api/webhooks/stripe?workflowId=${workflowId}${nodeId ? `&triggerNodeId=${nodeId}` : ""}`;
 
   const copyToClipboard = async () => {
     try {

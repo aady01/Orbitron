@@ -1,3 +1,4 @@
+import { NodeType } from "@/generated/prisma";
 import { sendWorkflowExecution } from "@/inngest/utils";
 import { type NextRequest, NextResponse } from "next/server";
 
@@ -5,6 +6,7 @@ export async function POST(request: NextRequest) {
   try {
     const url = new URL(request.url);
     const workflowId = url.searchParams.get("workflowId");
+    const triggerNodeId = url.searchParams.get("triggerNodeId") || undefined;
 
     if (!workflowId) {
       return NextResponse.json(
@@ -26,6 +28,8 @@ export async function POST(request: NextRequest) {
 
     await sendWorkflowExecution({
       workflowId,
+      triggerNodeId,
+      triggerType: NodeType.GOOGLE_FORM_TRIGGER,
       initialData: {
         googleForm: formData,
       },
